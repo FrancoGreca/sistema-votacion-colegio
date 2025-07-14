@@ -28,92 +28,119 @@ export default function DiagnosticPage() {
       }
     })
 
-    // Test 2: Formato de credenciales
-    const apiKeyValid = apiKey && apiKey.startsWith('pat')
-    const baseIdValid = baseId && baseId.startsWith('app')
+    // Test 2: API Routes - Candidatos
+    try {
+      const candidatesResponse = await fetch('/api/candidates')
+      const candidatesData = await candidatesResponse.json()
+      
+      diagnostics.push({
+        test: "API Route - Candidatos",
+        status: candidatesResponse.ok ? "success" : "error",
+        details: {
+          "Status": `${candidatesResponse.status} ${candidatesResponse.statusText}`,
+          "Candidatos encontrados": Array.isArray(candidatesData) ? candidatesData.length : 0,
+          "Ejemplo": candidatesData[0] ? `${candidatesData[0].apellido}, ${candidatesData[0].nombre}` : "Ninguno"
+        }
+      })
+    } catch (error) {
+      diagnostics.push({
+        test: "API Route - Candidatos",
+        status: "error",
+        details: {
+          "Error": error.message
+        }
+      })
+    }
 
+    // Test 3: API Routes - Autenticación
+    try {
+      const authResponse = await fetch('/api/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: 'ana.garcia', password: '123' })
+      })
+      const authData = await authResponse.json()
+      
+      diagnostics.push({
+        test: "API Route - Autenticación",
+        status: authResponse.ok ? "success" : "error",
+        details: {
+          "Status": `${authResponse.status} ${authResponse.statusText}`,
+          "Login exitoso": authData.success ? "✅ Sí" : "❌ No",
+          "Usuario": authData.student ? `${authData.student.nombre} ${authData.student.apellido}` : "N/A",
+          "Error": authData.error || "Ninguno"
+        }
+      })
+    } catch (error) {
+      diagnostics.push({
+        test: "API Route - Autenticación",
+        status: "error",
+        details: {
+          "Error": error.message
+        }
+      })
+    }
+
+    // Test 4: API Routes - Votos
+    try {
+      const currentMonth = new Date().toLocaleString('es', { month: 'long' })
+      const currentYear = new Date().getFullYear()
+      
+      const votesResponse = await fetch(`/api/votes?mes=${currentMonth}&ano=${currentYear}`)
+      const votesData = await votesResponse.json()
+      
+      diagnostics.push({
+        test: "API Route - Votos",
+        status: votesResponse.ok ? "success" : "error",
+        details: {
+          "Status": `${votesResponse.status} ${votesResponse.statusText}`,
+          "Votos este mes": Object.keys(votesData).length,
+          "Total votos": Object.values(votesData).reduce((sum: number, count) => sum + (count as number), 0)
+        }
+      })
+    } catch (error) {
+      diagnostics.push({
+        test: "API Route - Votos",
+        status: "error",
+        details: {
+          "Error": error.message
+        }
+      })
+    }
+
+    // Test 5: API Routes - Verificar voto
+    try {
+      const checkResponse = await fetch('/api/check-vote?username=ana.garcia')
+      const checkData = await checkResponse.json()
+      
+      diagnostics.push({
+        test: "API Route - Verificar Voto",
+        status: checkResponse.ok ? "success" : "error",
+        details: {
+          "Status": `${checkResponse.status} ${checkResponse.statusText}`,
+          "Usuario ya votó": checkData.hasVoted ? "✅ Sí" : "❌ No"
+        }
+      })
+    } catch (error) {
+      diagnostics.push({
+        test: "API Route - Verificar Voto",
+        status: "error",
+        details: {
+          "Error": error.message
+        }
+      })
+    }
+
+    // Test 6: Conectividad general
     diagnostics.push({
-      test: "Formato de credenciales",
-      status: apiKeyValid && baseIdValid ? "success" : "error",
+      test: "Resumen de Conectividad",
+      status: diagnostics.filter(d => d.status === "success").length >= 3 ? "success" : "warning",
       details: {
-        "API Key formato": apiKeyValid ? "✅ Empieza con 'pat'" : "❌ Debe empezar con 'pat'",
-        "Base ID formato": baseIdValid ? "✅ Empieza con 'app'" : "❌ Debe empezar con 'app'"
+        "APIs funcionando": `${diagnostics.filter(d => d.status === "success").length}/${diagnostics.length}`,
+        "Modo recomendado": apiKey === 'DEMO_MODE' ? "Demo (sin Airtable)" : "Producción (con Airtable)",
+        "Sistema operativo": diagnostics.filter(d => d.status === "success").length >= 2 ? "✅ Funcional" : "⚠️ Problemas"
       }
     })
-
-    // Test 3: Conectividad a Airtable
-    if (apiKey && baseId) {
-      try {
-        const response = await fetch(`https://api.airtable.com/v0/${baseId}/Students?maxRecords=1`, {
-          headers: {
-            'Authorization': `Bearer ${apiKey}`,
-            'Content-Type': 'application/json',
-          },
-        })
-
-        diagnostics.push({
-          test: "Conexión a Airtable",
-          status: response.ok ? "success" : "error",
-          details: {
-            "Status": `${response.status} ${response.statusText}`,
-            "URL": `https://api.airtable.com/v0/${baseId}/Students`,
-            "Headers": response.ok ? "✅ Correctos" : "❌ Error de autenticación"
-          }
-        })
-
-        if (response.ok) {
-          const data = await response.json()
-          diagnostics.push({
-            test: "Estructura de datos",
-            status: "success",
-            details: {
-              "Registros encontrados": data.records?.length || 0,
-              "Estructura": data.records?.length > 0 ? "✅ Datos disponibles" : "⚠️ Tabla vacía"
-            }
-          })
-        }
-      } catch (error) {
-        diagnostics.push({
-          test: "Conexión a Airtable", 
-          status: "error",
-          details: {
-            "Error": error.message,
-            "Tipo": "Error de red o CORS"
-          }
-        })
-      }
-    }
-
-    // Test 4: Tabla Students
-    if (apiKey && baseId) {
-      try {
-        const response = await fetch(`https://api.airtable.com/v0/${baseId}/Students`, {
-          headers: {
-            'Authorization': `Bearer ${apiKey}`,
-          },
-        })
-        
-        if (response.ok) {
-          const data = await response.json()
-          diagnostics.push({
-            test: "Tabla Students",
-            status: "success", 
-            details: {
-              "Estudiantes": data.records?.length || 0,
-              "Primeros usuarios": data.records?.slice(0, 3).map((r: any) => r.fields.Username).join(", ") || "Ninguno"
-            }
-          })
-        }
-      } catch (error) {
-        diagnostics.push({
-          test: "Tabla Students",
-          status: "error",
-          details: {
-            "Error": error.message
-          }
-        })
-      }
-    }
 
     setResults(diagnostics)
     setTesting(false)
@@ -130,9 +157,9 @@ export default function DiagnosticPage() {
       <div className="max-w-4xl mx-auto space-y-6">
         <Card>
           <CardHeader>
-            <CardTitle className="text-2xl font-bold">🔧 Diagnóstico del Sistema</CardTitle>
+            <CardTitle className="text-2xl font-bold">🔧 Diagnóstico del Sistema v2.0</CardTitle>
             <p className="text-gray-600">
-              Herramienta para diagnosticar problemas de conexión con Airtable
+              Verificación de API Routes y conectividad con Airtable
             </p>
           </CardHeader>
           <CardContent>
@@ -147,7 +174,7 @@ export default function DiagnosticPage() {
                   Ejecutando Diagnósticos...
                 </>
               ) : (
-                "🚀 Ejecutar Diagnósticos"
+                "🚀 Ejecutar Diagnósticos de API Routes"
               )}
             </Button>
 
@@ -164,7 +191,7 @@ export default function DiagnosticPage() {
                     {Object.entries(result.details).map(([key, value]) => (
                       <div key={key} className="flex justify-between items-center p-2 bg-gray-50 rounded">
                         <span className="font-medium">{key}:</span>
-                        <span className="text-sm">{value as string}</span>
+                        <span className="text-sm text-right max-w-md">{value as string}</span>
                       </div>
                     ))}
                   </div>
@@ -172,14 +199,35 @@ export default function DiagnosticPage() {
               </Card>
             ))}
 
-            <div className="mt-6 p-4 bg-blue-50 rounded-lg">
-              <h3 className="font-bold text-blue-800 mb-2">📋 Pasos para Solucionar:</h3>
-              <ol className="text-sm text-blue-700 space-y-1">
-                <li>1. Verificar que las variables de entorno estén en .env.local</li>
-                <li>2. Reiniciar el servidor (npm run dev)</li>
-                <li>3. Verificar credenciales en Airtable</li>
-                <li>4. Verificar que las tablas existan en Airtable</li>
-              </ol>
+            <div className="mt-6 p-4 bg-green-50 rounded-lg">
+              <h3 className="font-bold text-green-800 mb-2">✅ Solución Implementada:</h3>
+              <ul className="text-sm text-green-700 space-y-1">
+                <li>• <strong>API Routes:</strong> Eliminan problemas CORS</li>
+                <li>• <strong>Servidor intermedio:</strong> Next.js maneja requests a Airtable</li>
+                <li>• <strong>Fallback automático:</strong> Modo demo si Airtable falla</li>
+                <li>• <strong>Seguridad:</strong> API keys solo en servidor</li>
+              </ul>
+            </div>
+
+            <div className="mt-4 text-center space-x-2">
+              <Button 
+                onClick={() => window.location.href = '/'}
+                variant="outline"
+              >
+                🗳️ Probar Votación
+              </Button>
+              <Button 
+                onClick={() => window.location.href = '/resultados'}
+                variant="outline"
+              >
+                📊 Ver Resultados
+              </Button>
+              <Button 
+                onClick={() => window.location.href = '/admin'}
+                variant="outline"
+              >
+                🔐 Panel Admin
+              </Button>
             </div>
           </CardContent>
         </Card>
