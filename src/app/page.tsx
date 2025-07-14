@@ -5,24 +5,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
-import { Heart, Vote, CheckCircle, Users, Loader2, BarChart3 } from "lucide-react"
-
-// Datos de ejemplo
-const candidatos = [
-  { id: "1", nombre: "Ana", apellido: "García", grado: "1ro", curso: "Arrayan" },
-  { id: "2", nombre: "Luis", apellido: "Martín", grado: "1ro", curso: "Arrayan" },
-  { id: "3", nombre: "Sofia", apellido: "López", grado: "1ro", curso: "Ceibo" },
-  { id: "4", nombre: "Carlos", apellido: "Rodríguez", grado: "2do", curso: "Jacarandá" },
-  { id: "5", nombre: "María", apellido: "Fernández", grado: "2do", curso: "Arrayan" },
-  { id: "6", nombre: "Diego", apellido: "Álvarez", grado: "3ro", curso: "Ceibo" },
-  { id: "7", nombre: "Valentina", apellido: "Silva", grado: "3ro", curso: "Jacarandá" },
-  { id: "8", nombre: "Joaquín", apellido: "Morales", grado: "4to", curso: "Arrayan" },
-  { id: "9", nombre: "Isabella", apellido: "Castro", grado: "4to", curso: "Ceibo" },
-  { id: "10", nombre: "Mateo", apellido: "Vargas", grado: "5to", curso: "Jacarandá" },
-]
-
-const grados = ["1ro", "2do", "3ro", "4to", "5to", "6to"]
-const cursos = ["Arrayan", "Jacarandá", "Ceibo"]
+import { Heart, Vote, CheckCircle, Users, Loader2, BarChart3, LogOut, AlertCircle } from "lucide-react"
+import LoginForm from '../components/LoginForm'
+import { 
+  getStoredUser, 
+  clearStoredUser, 
+  getCandidates, 
+  hasVotedThisMonth, 
+  saveAuthenticatedVote 
+} from '../lib/auth'
 
 const getCurrentMonth = () => {
   const meses = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
@@ -32,17 +23,60 @@ const getCurrentMonth = () => {
 
 const getCurrentYear = () => new Date().getFullYear()
 
+interface Student {
+  id: string
+  username: string
+  nombre: string
+  apellido: string
+  grado: string
+  curso: string
+  active: boolean
+}
+
+interface Candidate {
+  id: string
+  nombre: string
+  apellido: string
+  grado: string
+  curso: string
+}
+
 export default function VotingPage() {
+  const [currentStudent, setCurrentStudent] = useState<Student | null>(null)
+  const [candidates, setCandidates] = useState<Candidate[]>([])
+  const [filteredCandidates, setFilteredCandidates] = useState<Candidate[]>([])
   const [selectedGrado, setSelectedGrado] = useState<string>("")
   const [selectedCurso, setSelectedCurso] = useState<string>("")
   const [selectedCandidate, setSelectedCandidate] = useState<string>("")
   const [hasVoted, setHasVoted] = useState(false)
+  const [alreadyVoted, setAlreadyVoted] = useState(false)
   const [submitting, setSubmitting] = useState(false)
-  const [filteredCandidates, setFilteredCandidates] = useState(candidatos)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  const grados = ["1ro", "2do", "3ro", "4to", "5to", "6to"]
+  const cursos = ["Arrayan", "Jacarandá", "Ceibo"]
+
+  // Verificar usuario logueado
+  useEffect(() => {
+    const storedUser = getStoredUser()
+    if (storedUser) {
+      setCurrentStudent(storedUser)
+    }
+    setLoading(false)
+  }, [])
+
+  // Cargar candidatos cuando hay usuario
+  useEffect(() => {
+    if (currentStudent) {
+      loadCandidates()
+      checkVoteStatus()
+    }
+  }, [currentStudent])
 
   // Filtrar candidatos
   useEffect(() => {
-    let filtered = candidatos
+    let filtered = candidates
 
     if (selectedGrado) {
       filtered = filtered.filter(c => c.grado === selectedGrado)
@@ -56,23 +90,58 @@ export default function VotingPage() {
 
     setFilteredCandidates(filtered)
     setSelectedCandidate("")
-  }, [selectedGrado, selectedCurso])
+  }, [candidates, selectedGrado, selectedCurso])
+
+  const loadCandidates = async () => {
+    try {
+      const candidatesData = await getCandidates()
+      setCandidates(candidatesData)
+    } catch (error) {
+      console.error('Error loading candidates:', error)
+      setError('Error al cargar candidatos')
+    }
+  }
+
+  const checkVoteStatus = async () => {
+    if (!currentStudent) return
+
+    try {
+      const voted = await hasVotedThisMonth(currentStudent.username)
+      setAlreadyVoted(voted)
+    } catch (error) {
+      console.error('Error checking vote status:', error)
+    }
+  }
 
   const handleVote = async () => {
-    if (!selectedCandidate) return
+    if (!selectedCandidate || !currentStudent) return
 
     setSubmitting(true)
     
-    // Simular envío de voto
-    await new Promise(resolve => setTimeout(resolve, 2000))
-    
-    // Guardar en localStorage para demo
-    const votes = JSON.parse(localStorage.getItem('demo-votes') || '{}')
-    votes[selectedCandidate] = (votes[selectedCandidate] || 0) + 1
-    localStorage.setItem('demo-votes', JSON.stringify(votes))
-    
-    setHasVoted(true)
-    setSubmitting(false)
+    try {
+      const success = await saveAuthenticatedVote(currentStudent.username, selectedCandidate)
+      
+      if (success) {
+        setHasVoted(true)
+        setAlreadyVoted(true)
+      } else {
+        setError('Error al enviar el voto. Intenta nuevamente.')
+      }
+    } catch (error) {
+      setError('Error de conexión. Intenta nuevamente.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const handleLogout = () => {
+    clearStoredUser()
+    setCurrentStudent(null)
+    setHasVoted(false)
+    setAlreadyVoted(false)
+    setSelectedCandidate("")
+    setSelectedGrado("")
+    setSelectedCurso("")
   }
 
   const resetVote = () => {
@@ -80,8 +149,69 @@ export default function VotingPage() {
     setSelectedCandidate("")
     setSelectedGrado("")
     setSelectedCurso("")
+    setError(null)
   }
 
+  // Mostrar login si no hay usuario
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+      </div>
+    )
+  }
+
+  if (!currentStudent) {
+    return <LoginForm onLoginSuccess={setCurrentStudent} />
+  }
+
+  // Si ya votó este mes
+  if (alreadyVoted && !hasVoted) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-orange-50 to-orange-100 flex items-center justify-center p-4">
+        <Card className="w-full max-w-md text-center">
+          <CardHeader>
+            <div className="mx-auto w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mb-4">
+              <AlertCircle className="w-8 h-8 text-orange-600" />
+            </div>
+            <CardTitle className="text-2xl text-orange-700">Ya Votaste Este Mes</CardTitle>
+            <CardDescription className="text-orange-600">
+              Hola {currentStudent.nombre}, ya emitiste tu voto para {getCurrentMonth()}.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="bg-orange-50 p-4 rounded-lg">
+              <p className="text-sm text-orange-700 font-medium">
+                Solo puedes votar una vez por mes.
+              </p>
+              <p className="text-xs text-orange-600 mt-2">
+                Los resultados se actualizan en tiempo real.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Button 
+                onClick={() => window.location.href = '/resultados'} 
+                className="w-full"
+              >
+                <BarChart3 className="w-4 h-4 mr-2" />
+                Ver Resultados
+              </Button>
+              <Button 
+                onClick={handleLogout}
+                variant="outline" 
+                className="w-full"
+              >
+                <LogOut className="w-4 h-4 mr-2" />
+                Cerrar Sesión
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  // Si acaba de votar
   if (hasVoted) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-50 to-green-100 flex items-center justify-center p-4">
@@ -92,29 +222,33 @@ export default function VotingPage() {
             </div>
             <CardTitle className="text-2xl text-green-700">¡Voto Registrado!</CardTitle>
             <CardDescription className="text-green-600">
-              Tu voto para la Bandera de la Empatía de {getCurrentMonth()} ha sido enviado exitosamente.
+              Gracias {currentStudent.nombre}, tu voto para {getCurrentMonth()} ha sido registrado exitosamente.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="bg-green-50 p-4 rounded-lg">
               <p className="text-sm text-green-700 font-medium">
-                Gracias por participar en la votación mensual.
+                Tu voto está seguro y ha sido contabilizado.
               </p>
               <p className="text-xs text-green-600 mt-2">
-                Los resultados se publicarán al final del mes.
+                Los resultados se actualizan en tiempo real.
               </p>
             </div>
             <div className="space-y-2">
-              <Button onClick={resetVote} variant="outline" className="w-full">
-                Votar Nuevamente
-              </Button>
               <Button 
                 onClick={() => window.location.href = '/resultados'} 
-                variant="secondary" 
                 className="w-full"
               >
                 <BarChart3 className="w-4 h-4 mr-2" />
                 Ver Resultados
+              </Button>
+              <Button 
+                onClick={handleLogout}
+                variant="outline" 
+                className="w-full"
+              >
+                <LogOut className="w-4 h-4 mr-2" />
+                Cerrar Sesión
               </Button>
             </div>
           </CardContent>
@@ -129,6 +263,23 @@ export default function VotingPage() {
         {/* Header */}
         <Card>
           <CardHeader className="text-center">
+            <div className="flex justify-between items-start mb-4">
+              <div className="flex items-center gap-2 bg-blue-100 px-3 py-1 rounded-full">
+                <Users className="w-4 h-4 text-blue-600" />
+                <span className="text-sm text-blue-700 font-medium">
+                  {currentStudent.nombre} {currentStudent.apellido}
+                </span>
+              </div>
+              <Button 
+                onClick={handleLogout}
+                variant="outline"
+                size="sm"
+              >
+                <LogOut className="w-4 h-4 mr-2" />
+                Salir
+              </Button>
+            </div>
+            
             <div className="mx-auto w-16 h-16 bg-gradient-to-r from-pink-100 to-purple-100 rounded-full flex items-center justify-center mb-4">
               <Heart className="w-8 h-8 text-purple-600" />
             </div>
@@ -137,20 +288,7 @@ export default function VotingPage() {
             </CardTitle>
             <CardDescription className="text-lg">
               Votación de {getCurrentMonth()} {getCurrentYear()}
-              <span className="block text-orange-600 text-sm mt-1 font-medium">
-                🎭 MODO DEMO - Datos de prueba
-              </span>
             </CardDescription>
-            <div className="mt-4">
-              <Button 
-                onClick={() => window.location.href = '/resultados'} 
-                variant="outline"
-                size="sm"
-              >
-                <BarChart3 className="w-4 h-4 mr-2" />
-                Ver Resultados
-              </Button>
-            </div>
           </CardHeader>
         </Card>
 
@@ -162,7 +300,7 @@ export default function VotingPage() {
                 Vota por el compañero que demostró más empatía este mes
               </p>
               <p className="text-sm text-gray-600">
-                Elige el grado y curso para ver los candidatos disponibles
+                Solo puedes votar una vez por mes. Elige cuidadosamente.
               </p>
             </div>
           </CardContent>
@@ -172,7 +310,7 @@ export default function VotingPage() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Users className="w-5 h-5" />
+              <Vote className="w-5 h-5" />
               Selecciona Grado y Curso
             </CardTitle>
           </CardHeader>
@@ -218,7 +356,7 @@ export default function VotingPage() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <Vote className="w-5 h-5" />
+                <Users className="w-5 h-5" />
                 Candidatos - {selectedGrado} {selectedCurso}
               </CardTitle>
               <CardDescription>
@@ -273,14 +411,20 @@ export default function VotingPage() {
                   <p className="text-blue-800 font-medium">
                     Has seleccionado a:{" "}
                     <span className="font-bold">
-                      {candidatos.find(c => c.id === selectedCandidate)?.apellido},{" "}
-                      {candidatos.find(c => c.id === selectedCandidate)?.nombre}
+                      {filteredCandidates.find(c => c.id === selectedCandidate)?.apellido},{" "}
+                      {filteredCandidates.find(c => c.id === selectedCandidate)?.nombre}
                     </span>
                   </p>
                   <p className="text-blue-600 text-sm mt-1">
-                    ¿Confirmas tu voto?
+                    ⚠️ Solo puedes votar una vez por mes. ¿Confirmas tu voto?
                   </p>
                 </div>
+                
+                {error && (
+                  <div className="bg-red-50 p-3 rounded-lg">
+                    <p className="text-red-600 text-sm">{error}</p>
+                  </div>
+                )}
 
                 <Button 
                   onClick={handleVote} 

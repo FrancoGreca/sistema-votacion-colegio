@@ -6,21 +6,8 @@ import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
-import { Trophy, ArrowLeft, Users, Vote, Calendar, Loader2 } from "lucide-react"
-
-// Mismos datos que en la votación
-const candidatos = [
-  { id: "1", nombre: "Ana", apellido: "García", grado: "1ro", curso: "Arrayan" },
-  { id: "2", nombre: "Luis", apellido: "Martín", grado: "1ro", curso: "Arrayan" },
-  { id: "3", nombre: "Sofia", apellido: "López", grado: "1ro", curso: "Ceibo" },
-  { id: "4", nombre: "Carlos", apellido: "Rodríguez", grado: "2do", curso: "Jacarandá" },
-  { id: "5", nombre: "María", apellido: "Fernández", grado: "2do", curso: "Arrayan" },
-  { id: "6", nombre: "Diego", apellido: "Álvarez", grado: "3ro", curso: "Ceibo" },
-  { id: "7", nombre: "Valentina", apellido: "Silva", grado: "3ro", curso: "Jacarandá" },
-  { id: "8", nombre: "Joaquín", apellido: "Morales", grado: "4to", curso: "Arrayan" },
-  { id: "9", nombre: "Isabella", apellido: "Castro", grado: "4to", curso: "Ceibo" },
-  { id: "10", nombre: "Mateo", apellido: "Vargas", grado: "5to", curso: "Jacarandá" },
-]
+import { Trophy, ArrowLeft, Users, Vote, Calendar, Loader2, BarChart3 } from "lucide-react"
+import { getCandidates, getVotes } from '../lib/auth'
 
 const grados = ["1ro", "2do", "3ro", "4to", "5to", "6to"]
 const cursos = ["Arrayan", "Jacarandá", "Ceibo"]
@@ -32,13 +19,24 @@ const meses = [
 const getCurrentMonth = () => meses[new Date().getMonth()]
 const getCurrentYear = () => new Date().getFullYear()
 
+interface Candidate {
+  id: string
+  nombre: string
+  apellido: string
+  grado: string
+  curso: string
+}
+
 interface ResultData {
-  candidate: typeof candidatos[0]
+  candidate: Candidate
   votes: number
   percentage: number
 }
 
+const USE_AUTH = process.env.NEXT_PUBLIC_USE_AUTH === 'true'
+
 export default function ResultsPage() {
+  const [candidates, setCandidates] = useState<Candidate[]>([])
   const [votes, setVotes] = useState<Record<string, number>>({})
   const [selectedGrado, setSelectedGrado] = useState("all")
   const [selectedCurso, setSelectedCurso] = useState("all")
@@ -46,19 +44,44 @@ export default function ResultsPage() {
   const [selectedAno, setSelectedAno] = useState(getCurrentYear().toString())
   const [results, setResults] = useState<ResultData[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-  // Cargar votos del localStorage
+  // Cargar candidatos
   useEffect(() => {
-    const savedVotes = localStorage.getItem('demo-votes')
-    if (savedVotes) {
-      setVotes(JSON.parse(savedVotes))
+    const loadCandidates = async () => {
+      try {
+        const candidatesData = await getCandidates()
+        setCandidates(candidatesData)
+      } catch (error) {
+        console.error('Error loading candidates:', error)
+        setError('Error al cargar candidatos')
+      }
     }
-    setLoading(false)
+    
+    loadCandidates()
   }, [])
+
+  // Cargar votos cuando cambia mes/año
+  useEffect(() => {
+    const loadVotes = async () => {
+      try {
+        setLoading(true)
+        const votesData = await getVotes(selectedMes, selectedAno)
+        setVotes(votesData)
+      } catch (error) {
+        console.error('Error loading votes:', error)
+        setError('Error al cargar votos')
+      } finally {
+        setLoading(false)
+      }
+    }
+    
+    loadVotes()
+  }, [selectedMes, selectedAno])
 
   // Calcular resultados cuando cambian filtros
   useEffect(() => {
-    let filteredCandidates = candidatos
+    let filteredCandidates = candidates
 
     if (selectedGrado && selectedGrado !== "all") {
       filteredCandidates = filteredCandidates.filter(c => c.grado === selectedGrado)
@@ -85,12 +108,30 @@ export default function ResultsPage() {
     )
 
     setResults(resultsData)
-  }, [votes, selectedGrado, selectedCurso])
+  }, [candidates, votes, selectedGrado, selectedCurso])
 
   // Ganador (el más votado)
   const sortedByVotes = [...results].sort((a, b) => b.votes - a.votes)
   const winner = sortedByVotes[0]
   const totalVotes = results.reduce((sum, r) => sum + r.votes, 0)
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-red-50 to-red-100 flex items-center justify-center p-4">
+        <Card className="w-full max-w-md">
+          <CardHeader>
+            <CardTitle className="text-red-600">Error</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-gray-600 mb-4">{error}</p>
+            <Button onClick={() => window.location.reload()}>
+              Reintentar
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 p-4">
@@ -107,15 +148,23 @@ export default function ResultsPage() {
                 </CardTitle>
                 <CardDescription>
                   Resultados de la votación Bandera de la Empatía - {selectedMes} {selectedAno}
-                  <span className="block text-orange-600 text-sm mt-1 font-medium">
-                    🎭 MODO DEMO - Datos de prueba
-                  </span>
+                  {!USE_AUTH && (
+                    <span className="block text-orange-600 text-sm mt-1 font-medium">
+                      🎭 MODO DEMO - Datos de prueba
+                    </span>
+                  )}
                 </CardDescription>
               </div>
-              <Button onClick={() => window.location.href = "/"} variant="outline">
-                <ArrowLeft className="w-4 h-4 mr-2" />
-                Volver a Votar
-              </Button>
+              <div className="flex gap-2">
+                <Button onClick={() => window.location.href = "/"} variant="outline">
+                  <ArrowLeft className="w-4 h-4 mr-2" />
+                  Volver a Votar
+                </Button>
+                <Button onClick={() => window.location.href = "/admin"} variant="outline">
+                  <BarChart3 className="w-4 h-4 mr-2" />
+                  Admin
+                </Button>
+              </div>
             </div>
           </CardHeader>
         </Card>
@@ -300,4 +349,4 @@ export default function ResultsPage() {
       </div>
     </div>
   )
-} 
+}
