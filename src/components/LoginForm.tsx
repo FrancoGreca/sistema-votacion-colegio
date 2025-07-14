@@ -8,8 +8,19 @@ import { Input } from "@/components/ui/input"
 import { Eye, EyeOff, User, Loader2, AlertCircle } from "lucide-react"
 import { authenticateStudent, storeUser } from '../lib/auth'
 
+// Type definition for Student
+interface Student {
+  id: string
+  username: string
+  nombre: string
+  apellido: string
+  grado: string
+  curso: string
+  active: boolean
+}
+
 interface LoginFormProps {
-  onLoginSuccess: (student: any) => void
+  onLoginSuccess: (student: Student) => void
 }
 
 export default function LoginForm({ onLoginSuccess }: LoginFormProps) {
@@ -33,8 +44,9 @@ export default function LoginForm({ onLoginSuccess }: LoginFormProps) {
       } else {
         setError(result.error || 'Error de autenticación')
       }
-    } catch (error) {
+    } catch (err) {
       setError('Error de conexión. Intenta nuevamente.')
+      console.error('Login error:', err)
     } finally {
       setLoading(false)
     }
@@ -138,4 +150,4 @@ export default function LoginForm({ onLoginSuccess }: LoginFormProps) {
       </Card>
     </div>
   )
-} 
+}

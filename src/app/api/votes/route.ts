@@ -4,7 +4,36 @@ import { NextRequest, NextResponse } from 'next/server'
 const AIRTABLE_API_KEY = process.env.NEXT_PUBLIC_AIRTABLE_API_KEY
 const AIRTABLE_BASE_ID = process.env.NEXT_PUBLIC_AIRTABLE_BASE_ID
 
-async function airtableRequest(table: string, method = 'GET', body?: any) {
+// Type definitions
+interface AirtableVoteRecord {
+  id: string
+  fields: {
+    VoteId?: string
+    StudentUsername?: string
+    CandidateId?: string
+    Mes?: string
+    Ano?: number
+    Timestamp?: string
+    [key: string]: unknown
+  }
+}
+
+interface AirtableResponse {
+  records: AirtableVoteRecord[]
+}
+
+interface VoteRequestBody {
+  studentUsername: string
+  candidateId: string
+  mes: string
+  ano: number
+}
+
+async function airtableRequest(
+  table: string, 
+  method = 'GET', 
+  body?: Record<string, unknown>
+): Promise<AirtableResponse> {
   const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${table}`
   
   const options: RequestInit = {
@@ -57,7 +86,7 @@ export async function GET(request: NextRequest) {
     const data = await airtableRequest(`Votes?filterByFormula=${encodeURIComponent(filterFormula)}`)
     
     const votes: Record<string, number> = {}
-    data.records.forEach((record: any) => {
+    data.records.forEach((record: AirtableVoteRecord) => {
       const candidateId = record.fields.CandidateId
       if (candidateId) {
         votes[candidateId] = (votes[candidateId] || 0) + 1
@@ -74,7 +103,8 @@ export async function GET(request: NextRequest) {
 // POST - Crear voto
 export async function POST(request: NextRequest) {
   try {
-    const { studentUsername, candidateId, mes, ano } = await request.json()
+    const requestBody: VoteRequestBody = await request.json()
+    const { studentUsername, candidateId, mes, ano } = requestBody
 
     // Si no está configurado Airtable, usar localStorage
     if (!AIRTABLE_API_KEY || !AIRTABLE_BASE_ID || 
@@ -115,4 +145,4 @@ export async function POST(request: NextRequest) {
       error: 'Error al guardar voto'
     }, { status: 500 })
   }
-} 
+}

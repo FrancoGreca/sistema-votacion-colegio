@@ -1,12 +1,12 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Eye, EyeOff, BarChart3, Trash2, Users, Vote, UserPlus, Download } from "lucide-react"
-import { getCandidates, getVotes } from '../lib/auth'
+import { getCandidates, getVotes } from '../../lib/auth'
 
 const ADMIN_PASSWORD = "colegio2024"
 const USE_AUTH = process.env.NEXT_PUBLIC_USE_AUTH === 'true'
@@ -29,10 +29,19 @@ interface Candidate {
   curso: string
 }
 
+interface AirtableRecord {
+  id: string
+  fields: Record<string, unknown>
+}
+
+interface AirtableResponse {
+  records: AirtableRecord[]
+}
+
 const AIRTABLE_API_KEY = process.env.NEXT_PUBLIC_AIRTABLE_API_KEY
 const AIRTABLE_BASE_ID = process.env.NEXT_PUBLIC_AIRTABLE_BASE_ID
 
-const airtableRequest = async (table: string, method = 'GET', body?: any) => {
+const airtableRequest = async (table: string, method = 'GET', body?: Record<string, unknown>): Promise<AirtableResponse> => {
   const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${table}`
   
   const options: RequestInit = {
@@ -75,27 +84,27 @@ export default function AdminPage() {
     curso: 'Arrayan'
   })
 
-  useEffect(() => {
-    // Verificar autenticación
-    const authTime = localStorage.getItem('admin-auth-time')
-    if (authTime) {
-      const elapsed = Date.now() - parseInt(authTime)
-      if (elapsed < 4 * 60 * 60 * 1000) {
-        setAuthenticated(true)
-      } else {
-        localStorage.removeItem('admin-auth-time')
-      }
+  const loadStudents = useCallback(async () => {
+    if (!USE_AUTH) return
+
+    try {
+      const data = await airtableRequest('Students')
+      const studentsData = data.records.map((record: AirtableRecord) => ({
+        id: record.id,
+        username: (record.fields.Username as string) || '',
+        nombre: (record.fields.Nombre as string) || '',
+        apellido: (record.fields.Apellido as string) || '',
+        grado: (record.fields.Grado as string) || '',
+        curso: (record.fields.Curso as string) || '',
+        active: (record.fields.Active as boolean) || false
+      }))
+      setStudents(studentsData)
+    } catch (error) {
+      console.error('Error loading students:', error)
     }
-    setLoading(false)
   }, [])
 
-  useEffect(() => {
-    if (authenticated) {
-      loadData()
-    }
-  }, [authenticated])
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       // Cargar candidatos
       const candidatesData = await getCandidates()
@@ -114,27 +123,27 @@ export default function AdminPage() {
     } catch (error) {
       console.error('Error loading data:', error)
     }
-  }
+  }, [loadStudents])
 
-  const loadStudents = async () => {
-    if (!USE_AUTH) return
-
-    try {
-      const data = await airtableRequest('Students')
-      const studentsData = data.records.map((record: any) => ({
-        id: record.id,
-        username: record.fields.Username || '',
-        nombre: record.fields.Nombre || '',
-        apellido: record.fields.Apellido || '',
-        grado: record.fields.Grado || '',
-        curso: record.fields.Curso || '',
-        active: record.fields.Active || false
-      }))
-      setStudents(studentsData)
-    } catch (error) {
-      console.error('Error loading students:', error)
+  useEffect(() => {
+    // Verificar autenticación
+    const authTime = localStorage.getItem('admin-auth-time')
+    if (authTime) {
+      const elapsed = Date.now() - parseInt(authTime)
+      if (elapsed < 4 * 60 * 60 * 1000) {
+        setAuthenticated(true)
+      } else {
+        localStorage.removeItem('admin-auth-time')
+      }
     }
-  }
+    setLoading(false)
+  }, [])
+
+  useEffect(() => {
+    if (authenticated) {
+      loadData()
+    }
+  }, [authenticated, loadData])
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault()

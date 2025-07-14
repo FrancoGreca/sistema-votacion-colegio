@@ -4,8 +4,33 @@ import { NextResponse } from 'next/server'
 const AIRTABLE_API_KEY = process.env.NEXT_PUBLIC_AIRTABLE_API_KEY
 const AIRTABLE_BASE_ID = process.env.NEXT_PUBLIC_AIRTABLE_BASE_ID
 
+// Type definitions
+interface AirtableRecord {
+  id: string
+  fields: {
+    Nombre?: string
+    Apellido?: string
+    Grado?: string
+    Curso?: string
+    Active?: boolean
+    [key: string]: unknown
+  }
+}
+
+interface AirtableResponse {
+  records: AirtableRecord[]
+}
+
+interface Candidate {
+  id: string
+  nombre: string
+  apellido: string
+  grado: string
+  curso: string
+}
+
 // Datos demo
-const demoCandidates = [
+const demoCandidates: Candidate[] = [
   { id: "1", nombre: "Ana", apellido: "García", grado: "1ro", curso: "Arrayan" },
   { id: "2", nombre: "Luis", apellido: "Martín", grado: "1ro", curso: "Arrayan" },
   { id: "3", nombre: "Sofia", apellido: "López", grado: "1ro", curso: "Ceibo" },
@@ -18,7 +43,7 @@ const demoCandidates = [
   { id: "10", nombre: "Mateo", apellido: "Vargas", grado: "5to", curso: "Jacarandá" },
 ]
 
-async function airtableRequest(table: string) {
+async function airtableRequest(table: string): Promise<AirtableResponse> {
   const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${table}?filterByFormula={Active} = TRUE()`
   
   const response = await fetch(url, {
@@ -44,7 +69,7 @@ export async function GET() {
     }
 
     const data = await airtableRequest('Candidates')
-    const candidates = data.records.map((record: any) => ({
+    const candidates: Candidate[] = data.records.map((record: AirtableRecord) => ({
       id: record.id,
       nombre: record.fields.Nombre || '',
       apellido: record.fields.Apellido || '',
@@ -58,4 +83,4 @@ export async function GET() {
     // En caso de error, devolver datos demo
     return NextResponse.json(demoCandidates)
   }
-} 
+}

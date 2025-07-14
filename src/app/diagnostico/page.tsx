@@ -5,13 +5,20 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { CheckCircle, XCircle, AlertCircle, Loader2 } from "lucide-react"
 
+// Type definitions
+interface DiagnosticResult {
+  test: string
+  status: "success" | "error" | "warning"
+  details: Record<string, string>
+}
+
 export default function DiagnosticPage() {
-  const [results, setResults] = useState<any[]>([])
+  const [results, setResults] = useState<DiagnosticResult[]>([])
   const [testing, setTesting] = useState(false)
 
   const runDiagnostics = async () => {
     setTesting(true)
-    const diagnostics = []
+    const diagnostics: DiagnosticResult[] = []
 
     // Test 1: Variables de entorno
     const apiKey = process.env.NEXT_PUBLIC_AIRTABLE_API_KEY
@@ -38,7 +45,7 @@ export default function DiagnosticPage() {
         status: candidatesResponse.ok ? "success" : "error",
         details: {
           "Status": `${candidatesResponse.status} ${candidatesResponse.statusText}`,
-          "Candidatos encontrados": Array.isArray(candidatesData) ? candidatesData.length : 0,
+          "Candidatos encontrados": Array.isArray(candidatesData) ? candidatesData.length.toString() : "0",
           "Ejemplo": candidatesData[0] ? `${candidatesData[0].apellido}, ${candidatesData[0].nombre}` : "Ninguno"
         }
       })
@@ -47,7 +54,7 @@ export default function DiagnosticPage() {
         test: "API Route - Candidatos",
         status: "error",
         details: {
-          "Error": error.message
+          "Error": error instanceof Error ? error.message : String(error)
         }
       })
     }
@@ -76,7 +83,7 @@ export default function DiagnosticPage() {
         test: "API Route - Autenticación",
         status: "error",
         details: {
-          "Error": error.message
+          "Error": error instanceof Error ? error.message : String(error)
         }
       })
     }
@@ -89,13 +96,17 @@ export default function DiagnosticPage() {
       const votesResponse = await fetch(`/api/votes?mes=${currentMonth}&ano=${currentYear}`)
       const votesData = await votesResponse.json()
       
+      const totalVotes = Object.values(votesData).reduce((sum: number, count) => {
+        return sum + (typeof count === 'number' ? count : 0)
+      }, 0)
+      
       diagnostics.push({
         test: "API Route - Votos",
         status: votesResponse.ok ? "success" : "error",
         details: {
           "Status": `${votesResponse.status} ${votesResponse.statusText}`,
-          "Votos este mes": Object.keys(votesData).length,
-          "Total votos": Object.values(votesData).reduce((sum: number, count) => sum + (count as number), 0)
+          "Votos este mes": Object.keys(votesData).length.toString(),
+          "Total votos": totalVotes.toString()
         }
       })
     } catch (error) {
@@ -103,7 +114,7 @@ export default function DiagnosticPage() {
         test: "API Route - Votos",
         status: "error",
         details: {
-          "Error": error.message
+          "Error": error instanceof Error ? error.message : String(error)
         }
       })
     }
@@ -126,19 +137,20 @@ export default function DiagnosticPage() {
         test: "API Route - Verificar Voto",
         status: "error",
         details: {
-          "Error": error.message
+          "Error": error instanceof Error ? error.message : String(error)
         }
       })
     }
 
     // Test 6: Conectividad general
+    const successfulTests = diagnostics.filter(d => d.status === "success").length
     diagnostics.push({
       test: "Resumen de Conectividad",
-      status: diagnostics.filter(d => d.status === "success").length >= 3 ? "success" : "warning",
+      status: successfulTests >= 3 ? "success" : "warning",
       details: {
-        "APIs funcionando": `${diagnostics.filter(d => d.status === "success").length}/${diagnostics.length}`,
+        "APIs funcionando": `${successfulTests}/${diagnostics.length}`,
         "Modo recomendado": apiKey === 'DEMO_MODE' ? "Demo (sin Airtable)" : "Producción (con Airtable)",
-        "Sistema operativo": diagnostics.filter(d => d.status === "success").length >= 2 ? "✅ Funcional" : "⚠️ Problemas"
+        "Sistema operativo": successfulTests >= 2 ? "✅ Funcional" : "⚠️ Problemas"
       }
     })
 
@@ -146,7 +158,7 @@ export default function DiagnosticPage() {
     setTesting(false)
   }
 
-  const StatusIcon = ({ status }: { status: string }) => {
+  const StatusIcon = ({ status }: { status: "success" | "error" | "warning" }) => {
     if (status === "success") return <CheckCircle className="w-5 h-5 text-green-600" />
     if (status === "error") return <XCircle className="w-5 h-5 text-red-600" />
     return <AlertCircle className="w-5 h-5 text-yellow-600" />
@@ -191,7 +203,7 @@ export default function DiagnosticPage() {
                     {Object.entries(result.details).map(([key, value]) => (
                       <div key={key} className="flex justify-between items-center p-2 bg-gray-50 rounded">
                         <span className="font-medium">{key}:</span>
-                        <span className="text-sm text-right max-w-md">{value as string}</span>
+                        <span className="text-sm text-right max-w-md">{value}</span>
                       </div>
                     ))}
                   </div>

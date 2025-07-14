@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { Trophy, ArrowLeft, Users, Vote, Calendar, Loader2, BarChart3 } from "lucide-react"
-import { getCandidates, getVotes } from '../lib/auth'
+import { getCandidates, getVotes } from '../../lib/auth'
 
 const grados = ["1ro", "2do", "3ro", "4to", "5to", "6to"]
 const cursos = ["Arrayan", "Jacarandá", "Ceibo"]

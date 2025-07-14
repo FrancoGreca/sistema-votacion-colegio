@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -57,6 +57,27 @@ export default function VotingPage() {
   const grados = ["1ro", "2do", "3ro", "4to", "5to", "6to"]
   const cursos = ["Arrayan", "Jacarandá", "Ceibo"]
 
+  const checkVoteStatus = useCallback(async () => {
+    if (!currentStudent) return
+
+    try {
+      const voted = await hasVotedThisMonth(currentStudent.username)
+      setAlreadyVoted(voted)
+    } catch (err) {
+      console.error('Error checking vote status:', err)
+    }
+  }, [currentStudent])
+
+  const loadCandidates = useCallback(async () => {
+    try {
+      const candidatesData = await getCandidates()
+      setCandidates(candidatesData)
+    } catch (err) {
+      console.error('Error loading candidates:', err)
+      setError('Error al cargar candidatos')
+    }
+  }, [])
+
   // Verificar usuario logueado
   useEffect(() => {
     const storedUser = getStoredUser()
@@ -72,7 +93,7 @@ export default function VotingPage() {
       loadCandidates()
       checkVoteStatus()
     }
-  }, [currentStudent])
+  }, [currentStudent, loadCandidates, checkVoteStatus])
 
   // Filtrar candidatos
   useEffect(() => {
@@ -92,31 +113,11 @@ export default function VotingPage() {
     setSelectedCandidate("")
   }, [candidates, selectedGrado, selectedCurso])
 
-  const loadCandidates = async () => {
-    try {
-      const candidatesData = await getCandidates()
-      setCandidates(candidatesData)
-    } catch (error) {
-      console.error('Error loading candidates:', error)
-      setError('Error al cargar candidatos')
-    }
-  }
-
-  const checkVoteStatus = async () => {
-    if (!currentStudent) return
-
-    try {
-      const voted = await hasVotedThisMonth(currentStudent.username)
-      setAlreadyVoted(voted)
-    } catch (error) {
-      console.error('Error checking vote status:', error)
-    }
-  }
-
   const handleVote = async () => {
     if (!selectedCandidate || !currentStudent) return
 
     setSubmitting(true)
+    setError(null)
     
     try {
       const success = await saveAuthenticatedVote(currentStudent.username, selectedCandidate)
@@ -127,8 +128,9 @@ export default function VotingPage() {
       } else {
         setError('Error al enviar el voto. Intenta nuevamente.')
       }
-    } catch (error) {
+    } catch (err) {
       setError('Error de conexión. Intenta nuevamente.')
+      console.error('Vote error:', err)
     } finally {
       setSubmitting(false)
     }
@@ -139,13 +141,6 @@ export default function VotingPage() {
     setCurrentStudent(null)
     setHasVoted(false)
     setAlreadyVoted(false)
-    setSelectedCandidate("")
-    setSelectedGrado("")
-    setSelectedCurso("")
-  }
-
-  const resetVote = () => {
-    setHasVoted(false)
     setSelectedCandidate("")
     setSelectedGrado("")
     setSelectedCurso("")
