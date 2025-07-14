@@ -1,9 +1,18 @@
- 
 // src/app/api/check-vote/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 
 const AIRTABLE_API_KEY = process.env.NEXT_PUBLIC_AIRTABLE_API_KEY
 const AIRTABLE_BASE_ID = process.env.NEXT_PUBLIC_AIRTABLE_BASE_ID
+
+// Función para formatear el mes correctamente para Airtable
+const formatMonthForAirtable = (date: Date): string => {
+  const months = [
+    'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+    'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+  ]
+  
+  return months[date.getMonth()]
+}
 
 async function airtableRequest(table: string) {
   const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${table}`
@@ -38,8 +47,10 @@ export async function GET(request: NextRequest) {
     }
 
     const currentDate = new Date()
-    const currentMonth = currentDate.toLocaleString('es', { month: 'long' })
+    const currentMonth = formatMonthForAirtable(currentDate) // ✅ CORREGIDO
     const currentYear = currentDate.getFullYear()
+
+    console.log('Checking vote with month format:', currentMonth) // Debug
 
     const filterFormula = `AND(
       {StudentUsername} = "${studentUsername}", 

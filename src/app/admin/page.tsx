@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Eye, EyeOff, BarChart3, Trash2, Users, Vote, UserPlus, Download } from "lucide-react"
+import { Eye, EyeOff, BarChart3, Trash2, Users, Vote, UserPlus, Download, Crown } from "lucide-react"
 import { getCandidates, getVotes } from '../../lib/auth'
 
 const ADMIN_PASSWORD = "colegio2024"
@@ -29,39 +29,14 @@ interface Candidate {
   curso: string
 }
 
-interface AirtableRecord {
-  id: string
-  fields: Record<string, unknown>
-}
-
-interface AirtableResponse {
-  records: AirtableRecord[]
-}
-
-const AIRTABLE_API_KEY = process.env.NEXT_PUBLIC_AIRTABLE_API_KEY
-const AIRTABLE_BASE_ID = process.env.NEXT_PUBLIC_AIRTABLE_BASE_ID
-
-const airtableRequest = async (table: string, method = 'GET', body?: Record<string, unknown>): Promise<AirtableResponse> => {
-  const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${table}`
+// Función para formatear el mes correctamente para Airtable
+const formatMonthForAirtable = (date: Date): string => {
+  const months = [
+    'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+    'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+  ]
   
-  const options: RequestInit = {
-    method,
-    headers: {
-      'Authorization': `Bearer ${AIRTABLE_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-  }
-  
-  if (body) {
-    options.body = JSON.stringify(body)
-  }
-  
-  const response = await fetch(url, options)
-  if (!response.ok) {
-    throw new Error(`Airtable error: ${response.status}`)
-  }
-  
-  return response.json()
+  return months[date.getMonth()]
 }
 
 export default function AdminPage() {
@@ -84,112 +59,110 @@ export default function AdminPage() {
     curso: 'Arrayan'
   })
 
+  // Estados para agregar candidato
+  const [newCandidate, setNewCandidate] = useState({
+    nombre: '',
+    apellido: '',
+    grado: '1ro',
+    curso: 'Arrayan'
+  })
+
+  const loadVotes = useCallback(async () => {
+    try {
+      const currentMonth = formatMonthForAirtable(new Date())
+      const currentYear = new Date().getFullYear().toString()
+      const votesData = await getVotes(currentMonth, currentYear)
+      setVotes(votesData)
+    } catch (error) {
+      console.error('Error loading votes:', error)
+    }
+  }, [])
+
+  const loadCandidates = useCallback(async () => {
+    try {
+      const candidatesData = await getCandidates()
+      setCandidates(candidatesData)
+    } catch (error) {
+      console.error('Error loading candidates:', error)
+    }
+  }, [])
+
   const loadStudents = useCallback(async () => {
     if (!USE_AUTH) return
 
     try {
-      const data = await airtableRequest('Students')
-      const studentsData = data.records.map((record: AirtableRecord) => ({
-        id: record.id,
-        username: (record.fields.Username as string) || '',
-        nombre: (record.fields.Nombre as string) || '',
-        apellido: (record.fields.Apellido as string) || '',
-        grado: (record.fields.Grado as string) || '',
-        curso: (record.fields.Curso as string) || '',
-        active: (record.fields.Active as boolean) || false
-      }))
-      setStudents(studentsData)
+      // Usar endpoint API en lugar de llamada directa
+      const response = await fetch('/api/students')
+      if (response.ok) {
+        const studentsData = await response.json()
+        setStudents(studentsData)
+      } else {
+        console.error('Error loading students via API')
+        setStudents([]) // Fallback a array vacío
+      }
     } catch (error) {
       console.error('Error loading students:', error)
+      setStudents([]) // Fallback a array vacío
     }
   }, [])
 
-  const loadData = useCallback(async () => {
-    try {
-      // Cargar candidatos
-      const candidatesData = await getCandidates()
-      setCandidates(candidatesData)
-
-      // Cargar votos del mes actual
-      const currentMonth = new Date().toLocaleString('es', { month: 'long' })
-      const currentYear = new Date().getFullYear().toString()
-      const votesData = await getVotes(currentMonth, currentYear)
-      setVotes(votesData)
-
-      // Cargar estudiantes si estamos en modo auth
-      if (USE_AUTH) {
-        await loadStudents()
-      }
-    } catch (error) {
-      console.error('Error loading data:', error)
-    }
-  }, [loadStudents])
-
   useEffect(() => {
-    // Verificar autenticación
-    const authTime = localStorage.getItem('admin-auth-time')
-    if (authTime) {
-      const elapsed = Date.now() - parseInt(authTime)
-      if (elapsed < 4 * 60 * 60 * 1000) {
-        setAuthenticated(true)
-      } else {
-        localStorage.removeItem('admin-auth-time')
-      }
+    const checkAuth = () => {
+      const isAuth = localStorage.getItem('admin-authenticated') === 'true'
+      setAuthenticated(isAuth)
+      setLoading(false)
     }
-    setLoading(false)
+
+    checkAuth()
   }, [])
 
   useEffect(() => {
     if (authenticated) {
-      loadData()
+      loadVotes()
+      loadCandidates()
+      loadStudents()
     }
-  }, [authenticated, loadData])
+  }, [authenticated, loadVotes, loadCandidates, loadStudents])
 
-  const handleLogin = (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleLogin = () => {
     if (password === ADMIN_PASSWORD) {
       setAuthenticated(true)
-      localStorage.setItem('admin-auth-time', Date.now().toString())
+      localStorage.setItem('admin-authenticated', 'true')
     } else {
       alert('Contraseña incorrecta')
-      setPassword("")
     }
   }
 
   const handleLogout = () => {
     setAuthenticated(false)
-    localStorage.removeItem('admin-auth-time')
+    localStorage.removeItem('admin-authenticated')
     setPassword("")
   }
 
-  const clearAllVotes = async () => {
-    if (!confirm('¿Estás seguro de que quieres borrar todos los votos del mes actual?')) {
+  const clearVotes = async () => {
+    if (!confirm('¿Estás seguro de eliminar todos los votos del mes actual?')) {
       return
     }
 
-    if (USE_AUTH) {
-      // Limpiar votos de Airtable
-      try {
-        const currentMonth = new Date().toLocaleString('es', { month: 'long' })
-        const currentYear = new Date().getFullYear()
-        const filterFormula = `AND({Mes} = "${currentMonth}", {Ano} = ${currentYear})`
-        const data = await airtableRequest(`Votes?filterByFormula=${encodeURIComponent(filterFormula)}`)
-        
-        // Eliminar cada registro
-        for (const record of data.records) {
-          await airtableRequest(`Votes/${record.id}`, 'DELETE')
-        }
-        
+    try {
+      const response = await fetch('/api/admin/clear-votes', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
         setVotes({})
         alert('Votos eliminados exitosamente')
-      } catch (error) {
-        console.error('Error clearing votes:', error)
-        alert('Error al eliminar votos')
+      } else {
+        alert(`Error: ${data.error}`)
       }
-    } else {
-      // Modo demo
-      localStorage.removeItem('demo-votes')
-      setVotes({})
+    } catch (error) {
+      console.error('Error clearing votes:', error)
+      alert('Error al eliminar votos')
     }
   }
 
@@ -199,20 +172,25 @@ export default function AdminPage() {
       return
     }
 
-    if (USE_AUTH) {
-      try {
-        await airtableRequest('Students', 'POST', {
-          fields: {
-            Username: newStudent.username,
-            Password: newStudent.password,
-            Nombre: newStudent.nombre,
-            Apellido: newStudent.apellido,
-            Grado: newStudent.grado,
-            Curso: newStudent.curso,
-            Active: true
-          }
-        })
+    try {
+      const response = await fetch('/api/students', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          username: newStudent.username,
+          password: newStudent.password,
+          nombre: newStudent.nombre,
+          apellido: newStudent.apellido,
+          grado: newStudent.grado,
+          curso: newStudent.curso
+        }),
+      })
 
+      const data = await response.json()
+
+      if (data.success) {
         setNewStudent({
           username: '',
           password: '123',
@@ -224,10 +202,110 @@ export default function AdminPage() {
 
         await loadStudents()
         alert('Estudiante agregado exitosamente')
-      } catch (error) {
-        console.error('Error adding student:', error)
-        alert('Error al agregar estudiante')
+      } else {
+        alert(`Error al agregar estudiante: ${data.error}`)
       }
+    } catch (error) {
+      console.error('Error adding student:', error)
+      alert('Error al agregar estudiante')
+    }
+  }
+
+  const addCandidate = async () => {
+    if (!newCandidate.nombre || !newCandidate.apellido) {
+      alert('Complete nombre y apellido')
+      return
+    }
+
+    try {
+      console.log('Sending candidate data:', {
+        nombre: newCandidate.nombre,
+        apellido: newCandidate.apellido,
+        grado: newCandidate.grado,
+        curso: newCandidate.curso
+      })
+
+      const response = await fetch('/api/candidates', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          nombre: newCandidate.nombre,
+          apellido: newCandidate.apellido,
+          grado: newCandidate.grado,
+          curso: newCandidate.curso
+        }),
+      })
+
+      console.log('Response status:', response.status, response.statusText)
+
+      // Verificar si la respuesta es OK antes de parsear
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.log('HTTP Error response:', response.status, errorText)
+        
+        // Parsear el error para mostrar mensaje más amigable
+        try {
+          const errorData = JSON.parse(errorText)
+          if (response.status === 409) {
+            // Error de duplicado - esperado
+            alert(`⚠️ ${errorData.error || 'El candidato ya existe'}`)
+          } else {
+            // Otros errores HTTP
+            alert(`Error ${response.status}: ${errorData.error || 'Error del servidor'}`)
+          }
+        } catch {
+          // Si no se puede parsear, mostrar error genérico
+          alert(`Error HTTP ${response.status}: ${errorText}`)
+        }
+        return
+      }
+
+      // Leer la respuesta como texto primero para debugging
+      const responseText = await response.text()
+      console.log('Raw response:', responseText)
+
+      // Verificar si hay contenido para parsear
+      if (!responseText.trim()) {
+        console.error('Empty response received')
+        alert('Error: Respuesta vacía del servidor')
+        return
+      }
+
+      let data
+      try {
+        data = JSON.parse(responseText)
+        console.log('Parsed data:', data)
+      } catch (parseError) {
+        console.error('Error parsing JSON:', parseError)
+        console.error('Response text was:', responseText)
+        alert('Error: Respuesta inválida del servidor')
+        return
+      }
+
+      // Verificar si la operación fue exitosa
+      if (data && data.success) {
+        // Limpiar el formulario
+        setNewCandidate({
+          nombre: '',
+          apellido: '',
+          grado: '1ro',
+          curso: 'Arrayan'
+        })
+
+        // Recargar la lista de candidatos
+        await loadCandidates()
+        alert('Candidato agregado exitosamente')
+      } else {
+        // Manejar errores de la API
+        const errorMsg = data?.error || 'Error desconocido'
+        console.error('API Error:', errorMsg)
+        alert(`Error al agregar candidato: ${errorMsg}`)
+      }
+    } catch (error) {
+      console.error('Network error adding candidate:', error)
+      alert('Error de conexión al agregar candidato')
     }
   }
 
@@ -236,8 +314,8 @@ export default function AdminPage() {
       candidates,
       votes,
       students: USE_AUTH ? students : [],
-      exportDate: new Date().toISOString(),
-      month: new Date().toLocaleString('es', { month: 'long' }),
+      timestamp: new Date().toISOString(),
+      month: formatMonthForAirtable(new Date()),
       year: new Date().getFullYear()
     }
 
@@ -245,72 +323,54 @@ export default function AdminPage() {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `votacion-export-${new Date().toISOString().split('T')[0]}.json`
+    a.download = `votacion-data-${new Date().toISOString().split('T')[0]}.json`
+    document.body.appendChild(a)
     a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
   }
-
-  const totalVotes = Object.values(votes).reduce((sum, count) => sum + count, 0)
-  const activeStudents = students.filter(s => s.active).length
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Cargando panel de administración...</p>
+        </div>
       </div>
     )
   }
 
   if (!authenticated) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <Card className="w-full max-w-md">
-          <CardHeader className="text-center">
-            <div className="mx-auto w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mb-4">
-              <BarChart3 className="w-8 h-8 text-blue-600" />
-            </div>
-            <CardTitle className="text-2xl">Panel de Administración</CardTitle>
-            <p className="text-sm text-gray-600">
-              Acceso exclusivo para docentes y administradores
-            </p>
+          <CardHeader>
+            <CardTitle className="text-center">Panel de Administración</CardTitle>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleLogin} className="space-y-4">
-              <div className="relative">
-                <Input
-                  type={showPassword ? "text" : "password"}
-                  placeholder="Contraseña de administrador"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  className="pr-10"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm font-medium mb-2 block">Contraseña de administrador:</label>
+                <div className="relative">
+                  <Input
+                    type={showPassword ? "text" : "password"}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    onKeyPress={(e) => e.key === 'Enter' && handleLogin()}
+                    className="pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
-              
-              <Button type="submit" className="w-full">
-                Acceder al Panel
-              </Button>
-            </form>
-            
-            <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-              <p className="text-xs text-gray-600 text-center">
-                <strong>Credencial:</strong> colegio2024
-              </p>
-            </div>
-            
-            <div className="mt-4 text-center">
-              <Button 
-                variant="outline" 
-                onClick={() => window.location.href = '/'}
-                className="text-sm"
-              >
-                ← Volver a Votación
+              <Button onClick={handleLogin} className="w-full">
+                Iniciar Sesión
               </Button>
             </div>
           </CardContent>
@@ -319,128 +379,118 @@ export default function AdminPage() {
     )
   }
 
+  const totalVotes = Object.values(votes).reduce((sum, count) => sum + count, 0)
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 p-4">
-      <div className="max-w-6xl mx-auto space-y-6">
-        {/* Header */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="text-2xl font-bold flex items-center gap-2">
-                  <BarChart3 className="w-6 h-6 text-blue-600" />
-                  Panel de Administración
-                </CardTitle>
-                <p className="text-sm text-gray-600 mt-1">
-                  {USE_AUTH ? 'Sistema con autenticación activado' : 'Modo Demo - Datos de prueba'}
-                </p>
-              </div>
-              <div className="flex gap-2">
-                <Button onClick={exportData} variant="outline" size="sm">
-                  <Download className="w-4 h-4 mr-2" />
-                  Exportar
-                </Button>
-                <Button onClick={() => window.location.href = '/resultados'} variant="outline" size="sm">
-                  Ver Resultados
-                </Button>
-                <Button onClick={handleLogout} variant="outline" size="sm">
-                  Cerrar Sesión
-                </Button>
-              </div>
-            </div>
-          </CardHeader>
-        </Card>
+    <div className="min-h-screen bg-gray-50 p-6">
+      <div className="max-w-6xl mx-auto">
+        <div className="flex items-center justify-between mb-6">
+          <h1 className="text-3xl font-bold">Panel de Administración</h1>
+          <Button onClick={handleLogout} variant="outline">
+            Cerrar Sesión
+          </Button>
+        </div>
 
-        {/* Navegación */}
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex space-x-1">
-              <Button
-                variant={activeTab === 'stats' ? 'default' : 'outline'}
-                onClick={() => setActiveTab('stats')}
-                size="sm"
-              >
-                <BarChart3 className="w-4 h-4 mr-2" />
-                Estadísticas
-              </Button>
-              {USE_AUTH && (
-                <Button
-                  variant={activeTab === 'students' ? 'default' : 'outline'}
-                  onClick={() => setActiveTab('students')}
-                  size="sm"
-                >
-                  <Users className="w-4 h-4 mr-2" />
-                  Estudiantes ({activeStudents})
-                </Button>
-              )}
-              <Button
-                variant={activeTab === 'candidates' ? 'default' : 'outline'}
-                onClick={() => setActiveTab('candidates')}
-                size="sm"
-              >
-                <Vote className="w-4 h-4 mr-2" />
-                Candidatos ({candidates.length})
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+        {/* Navegación de tabs */}
+        <div className="flex gap-2 mb-6">
+          <Button
+            variant={activeTab === 'stats' ? 'default' : 'outline'}
+            onClick={() => setActiveTab('stats')}
+            className="flex items-center gap-2"
+          >
+            <BarChart3 className="w-4 h-4" />
+            Estadísticas
+          </Button>
+          {USE_AUTH && (
+            <Button
+              variant={activeTab === 'students' ? 'default' : 'outline'}
+              onClick={() => setActiveTab('students')}
+              className="flex items-center gap-2"
+            >
+              <Users className="w-4 h-4" />
+              Estudiantes
+            </Button>
+          )}
+          <Button
+            variant={activeTab === 'candidates' ? 'default' : 'outline'}
+            onClick={() => setActiveTab('candidates')}
+            className="flex items-center gap-2"
+          >
+            <Crown className="w-4 h-4" />
+            Candidatos
+          </Button>
+        </div>
 
-        {/* Contenido según tab activo */}
+        {/* Contenido de estadísticas */}
         {activeTab === 'stats' && (
           <>
-            {/* Estadísticas Generales */}
-            <div className="grid md:grid-cols-4 gap-4">
+            {/* Resumen */}
+            <div className="grid md:grid-cols-3 gap-6 mb-6">
               <Card>
-                <CardContent className="pt-6">
-                  <div className="text-center">
-                    <p className="text-2xl font-bold text-blue-600">{totalVotes}</p>
-                    <p className="text-sm text-gray-600">Total de Votos</p>
+                <CardContent className="p-6">
+                  <div className="flex items-center gap-4">
+                    <Vote className="w-8 h-8 text-blue-600" />
+                    <div>
+                      <p className="text-2xl font-bold">{totalVotes}</p>
+                      <p className="text-gray-600">Votos Totales</p>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
 
               <Card>
-                <CardContent className="pt-6">
-                  <div className="text-center">
-                    <p className="text-2xl font-bold text-green-600">{candidates.length}</p>
-                    <p className="text-sm text-gray-600">Candidatos Activos</p>
+                <CardContent className="p-6">
+                  <div className="flex items-center gap-4">
+                    <Crown className="w-8 h-8 text-yellow-600" />
+                    <div>
+                      <p className="text-2xl font-bold">{candidates.length}</p>
+                      <p className="text-gray-600">Candidatos</p>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
 
               {USE_AUTH && (
                 <Card>
-                  <CardContent className="pt-6">
-                    <div className="text-center">
-                      <p className="text-2xl font-bold text-purple-600">{activeStudents}</p>
-                      <p className="text-sm text-gray-600">Estudiantes Activos</p>
+                  <CardContent className="p-6">
+                    <div className="flex items-center gap-4">
+                      <Users className="w-8 h-8 text-green-600" />
+                      <div>
+                        <p className="text-2xl font-bold">{students.length}</p>
+                        <p className="text-gray-600">Estudiantes</p>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
               )}
-
-              <Card>
-                <CardContent className="pt-6">
-                  <div className="text-center">
-                    <p className="text-2xl font-bold text-orange-600">
-                      {Object.keys(votes).length}
-                    </p>
-                    <p className="text-sm text-gray-600">Han Recibido Votos</p>
-                  </div>
-                </CardContent>
-              </Card>
             </div>
 
-            {/* Detalles de Votos */}
-            <Card>
+            {/* Acciones rápidas */}
+            <Card className="mb-6">
               <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle>Votos por Candidato - {new Date().toLocaleString('es', { month: 'long' })}</CardTitle>
-                  <Button onClick={clearAllVotes} variant="destructive" size="sm">
-                    <Trash2 className="w-4 h-4 mr-2" />
-                    Limpiar Votos
+                <CardTitle>Acciones Rápidas</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex gap-4">
+                  <Button onClick={clearVotes} variant="destructive" className="flex items-center gap-2">
+                    <Trash2 className="w-4 h-4" />
+                    Limpiar Votos del Mes
+                  </Button>
+                  <Button onClick={exportData} variant="outline" className="flex items-center gap-2">
+                    <Download className="w-4 h-4" />
+                    Exportar Datos
+                  </Button>
+                  <Button onClick={loadVotes} variant="outline">
+                    Actualizar Datos
                   </Button>
                 </div>
+              </CardContent>
+            </Card>
+
+            {/* Resultados */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Resultados de Votación - {formatMonthForAirtable(new Date())} {new Date().getFullYear()}</CardTitle>
               </CardHeader>
               <CardContent>
                 {totalVotes === 0 ? (
@@ -484,10 +534,10 @@ export default function AdminPage() {
           </>
         )}
 
+        {/* Contenido de estudiantes */}
         {activeTab === 'students' && USE_AUTH && (
           <>
-            {/* Agregar Estudiante */}
-            <Card>
+            <Card className="mb-6">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <UserPlus className="w-5 h-5" />
@@ -495,7 +545,7 @@ export default function AdminPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="grid md:grid-cols-3 gap-4">
+                <div className="grid md:grid-cols-3 gap-4 mb-4">
                   <div>
                     <label className="text-sm font-medium mb-2 block">Usuario:</label>
                     <Input
@@ -504,6 +554,17 @@ export default function AdminPage() {
                       onChange={(e) => setNewStudent({...newStudent, username: e.target.value})}
                     />
                   </div>
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">Contraseña:</label>
+                    <Input
+                      placeholder="123"
+                      value={newStudent.password}
+                      onChange={(e) => setNewStudent({...newStudent, password: e.target.value})}
+                    />
+                  </div>
+                </div>
+                
+                <div className="grid md:grid-cols-2 gap-4 mb-4">
                   <div>
                     <label className="text-sm font-medium mb-2 block">Nombre:</label>
                     <Input
@@ -520,94 +581,192 @@ export default function AdminPage() {
                       onChange={(e) => setNewStudent({...newStudent, apellido: e.target.value})}
                     />
                   </div>
+                </div>
+                
+                <div className="grid md:grid-cols-2 gap-4 mb-4">
                   <div>
                     <label className="text-sm font-medium mb-2 block">Grado:</label>
-                    <Select value={newStudent.grado} onValueChange={(value) => setNewStudent({...newStudent, grado: value})}>
+                    <Select 
+                      value={newStudent.grado} 
+                      onValueChange={(value) => setNewStudent({...newStudent, grado: value})}
+                    >
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {["1ro", "2do", "3ro", "4to", "5to", "6to"].map((grado) => (
-                          <SelectItem key={grado} value={grado}>{grado}</SelectItem>
-                        ))}
+                        <SelectItem value="1ro">1ro</SelectItem>
+                        <SelectItem value="2do">2do</SelectItem>
+                        <SelectItem value="3ro">3ro</SelectItem>
+                        <SelectItem value="4to">4to</SelectItem>
+                        <SelectItem value="5to">5to</SelectItem>
+                        <SelectItem value="6to">6to</SelectItem>
+                        <SelectItem value="7mo">7mo</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                   <div>
                     <label className="text-sm font-medium mb-2 block">Curso:</label>
-                    <Select value={newStudent.curso} onValueChange={(value) => setNewStudent({...newStudent, curso: value})}>
+                    <Select 
+                      value={newStudent.curso} 
+                      onValueChange={(value) => setNewStudent({...newStudent, curso: value})}
+                    >
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {["Arrayan", "Jacarandá", "Ceibo"].map((curso) => (
-                          <SelectItem key={curso} value={curso}>{curso}</SelectItem>
-                        ))}
+                        <SelectItem value="Arrayan">Arrayan</SelectItem>
+                        <SelectItem value="Ceibo">Ceibo</SelectItem>
+                        <SelectItem value="Jacarandá">Jacarandá</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="flex items-end">
-                    <Button onClick={addStudent} className="w-full">
-                      <UserPlus className="w-4 h-4 mr-2" />
-                      Agregar
-                    </Button>
-                  </div>
                 </div>
+                
+                <Button onClick={addStudent} className="w-full">
+                  <UserPlus className="w-4 h-4 mr-2" />
+                  Agregar Estudiante
+                </Button>
               </CardContent>
             </Card>
 
-            {/* Lista de Estudiantes */}
             <Card>
               <CardHeader>
-                <CardTitle>Estudiantes Registrados ({students.length})</CardTitle>
+                <CardTitle className="flex items-center gap-2">
+                  <Users className="w-5 h-5" />
+                  Estudiantes Registrados ({students.length})
+                </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-2 max-h-96 overflow-y-auto">
-                  {students.map((student) => (
-                    <div key={student.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                      <div>
-                        <p className="font-medium">{student.apellido}, {student.nombre}</p>
-                        <p className="text-sm text-gray-600">
-                          @{student.username} • {student.grado} {student.curso}
-                        </p>
+                {students.length === 0 ? (
+                  <div className="text-center py-8">
+                    <p className="text-gray-500">No hay estudiantes registrados</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {students.map((student) => (
+                      <div key={student.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                        <div>
+                          <p className="font-medium">{student.apellido}, {student.nombre}</p>
+                          <p className="text-sm text-gray-600">@{student.username} • {student.grado} {student.curso}</p>
+                        </div>
+                        <div className="text-sm text-gray-500">
+                          {student.active ? '✅ Activo' : '❌ Inactivo'}
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className={`px-2 py-1 rounded text-xs ${
-                          student.active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                        }`}>
-                          {student.active ? 'Activo' : 'Inactivo'}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </>
         )}
 
+        {/* Contenido de candidatos */}
         {activeTab === 'candidates' && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Candidatos Registrados ({candidates.length})</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                {candidates.map((candidate) => (
-                  <div key={candidate.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <div>
-                      <p className="font-medium">{candidate.apellido}, {candidate.nombre}</p>
-                      <p className="text-sm text-gray-600">{candidate.grado} {candidate.curso}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-xl font-bold">{votes[candidate.id] || 0}</p>
-                      <p className="text-sm text-gray-600">votos</p>
-                    </div>
+          <>
+            <Card className="mb-6">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Crown className="w-5 h-5" />
+                  Agregar Nuevo Candidato
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid md:grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">Nombre:</label>
+                    <Input
+                      placeholder="Nombre"
+                      value={newCandidate.nombre}
+                      onChange={(e) => setNewCandidate({...newCandidate, nombre: e.target.value})}
+                    />
                   </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">Apellido:</label>
+                    <Input
+                      placeholder="Apellido"
+                      value={newCandidate.apellido}
+                      onChange={(e) => setNewCandidate({...newCandidate, apellido: e.target.value})}
+                    />
+                  </div>
+                </div>
+                
+                <div className="grid md:grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">Grado:</label>
+                    <Select 
+                      value={newCandidate.grado} 
+                      onValueChange={(value) => setNewCandidate({...newCandidate, grado: value})}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="1ro">1ro</SelectItem>
+                        <SelectItem value="2do">2do</SelectItem>
+                        <SelectItem value="3ro">3ro</SelectItem>
+                        <SelectItem value="4to">4to</SelectItem>
+                        <SelectItem value="5to">5to</SelectItem>
+                        <SelectItem value="6to">6to</SelectItem>
+                        <SelectItem value="7mo">7mo</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">Curso:</label>
+                    <Select 
+                      value={newCandidate.curso} 
+                      onValueChange={(value) => setNewCandidate({...newCandidate, curso: value})}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Arrayan">Arrayan</SelectItem>
+                        <SelectItem value="Ceibo">Ceibo</SelectItem>
+                        <SelectItem value="Jacarandá">Jacarandá</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                
+                <Button onClick={addCandidate} className="w-full">
+                  <Crown className="w-4 h-4 mr-2" />
+                  Agregar Candidato
+                </Button>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Crown className="w-5 h-5" />
+                  Candidatos Registrados ({candidates.length})
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {candidates.length === 0 ? (
+                  <div className="text-center py-8">
+                    <p className="text-gray-500">No hay candidatos registrados</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {candidates.map((candidate) => (
+                      <div key={candidate.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                        <div>
+                          <p className="font-medium">{candidate.apellido}, {candidate.nombre}</p>
+                          <p className="text-sm text-gray-600">{candidate.grado} {candidate.curso}</p>
+                        </div>
+                        <div className="text-sm text-gray-500">
+                          {votes[candidate.id] || 0} votos
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </>
         )}
       </div>
     </div>

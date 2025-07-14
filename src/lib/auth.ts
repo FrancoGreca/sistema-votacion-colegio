@@ -24,6 +24,17 @@ interface Candidate {
   curso: string
 }
 
+// Función para formatear el mes correctamente para Airtable
+const formatMonthForAirtable = (date: Date): string => {
+  // Lista de meses en español con la capitalización correcta
+  const months = [
+    'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+    'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+  ]
+  
+  return months[date.getMonth()]
+}
+
 // Autenticar estudiante usando API route
 export const authenticateStudent = async (username: string, password: string): Promise<AuthResponse> => {
   try {
@@ -71,8 +82,15 @@ export const saveAuthenticatedVote = async (
 ): Promise<boolean> => {
   try {
     const currentDate = new Date()
-    const currentMonth = currentDate.toLocaleString('es', { month: 'long' })
+    const currentMonth = formatMonthForAirtable(currentDate) // ✅ CORREGIDO: Usar función específica
     const currentYear = currentDate.getFullYear()
+
+    console.log('Enviando voto:', {
+      studentUsername,
+      candidateId,
+      mes: currentMonth,
+      ano: currentYear
+    })
 
     const response = await fetch('/api/votes', {
       method: 'POST',
@@ -87,22 +105,53 @@ export const saveAuthenticatedVote = async (
       }),
     })
 
-    if (!response.ok) {
-      throw new Error('Network error')
+    console.log('Respuesta del servidor:', {
+      status: response.status,
+      statusText: response.statusText,
+      ok: response.ok
+    })
+
+    // Intentar leer la respuesta como JSON
+    let data
+    try {
+      const responseText = await response.text()
+      console.log('Texto de respuesta:', responseText)
+      
+      if (responseText) {
+        data = JSON.parse(responseText)
+      } else {
+        data = { success: false, error: 'Respuesta vacía del servidor' }
+      }
+    } catch (parseError) {
+      console.error('Error parsing JSON response:', parseError)
+      data = { success: false, error: 'Respuesta inválida del servidor' }
     }
 
-    const data = await response.json()
-    
-    // Si es modo demo, también guardar en localStorage
-    if (data.success) {
-      const votes = JSON.parse(localStorage.getItem('demo-votes') || '{}')
-      votes[candidateId] = (votes[candidateId] || 0) + 1
-      localStorage.setItem('demo-votes', JSON.stringify(votes))
+    console.log('Datos parseados:', data)
+
+    if (!response.ok) {
+      console.error('Error HTTP:', response.status, response.statusText)
+      console.error('Error details:', data)
+      return false
     }
     
-    return data.success
+    // Si es modo demo y estamos en el cliente, guardar en localStorage
+    if (data.success && typeof window !== 'undefined') {
+      try {
+        const votes = JSON.parse(localStorage.getItem('demo-votes') || '{}')
+        votes[candidateId] = (votes[candidateId] || 0) + 1
+        localStorage.setItem('demo-votes', JSON.stringify(votes))
+        console.log('Voto guardado en localStorage:', votes)
+      } catch (localStorageError) {
+        console.warn('Error saving to localStorage:', localStorageError)
+        // No bloquear el voto si localStorage falla
+      }
+    }
+    
+    return data.success || false
   } catch (error) {
-    console.error('Error saving vote:', error)
+    console.error('Error completo saving vote:', error)
+    console.error('Stack trace:', error instanceof Error ? error.stack : 'No stack available')
     return false
   }
 }
@@ -144,12 +193,15 @@ export const getVotes = async (mes: string, ano: string): Promise<Record<string,
     return votes
   } catch (error) {
     console.error('Error fetching votes:', error)
-    // Fallback a localStorage para modo demo
-    return JSON.parse(localStorage.getItem('demo-votes') || '{}')
+    // Fallback a localStorage para modo demo (solo en cliente)
+    if (typeof window !== 'undefined') {
+      return JSON.parse(localStorage.getItem('demo-votes') || '{}')
+    }
+    return {}
   }
 }
 
-// Context para manejo de sesión (sin cambios)
+// Context para manejo de sesión
 export const getStoredUser = (): Student | null => {
   if (typeof window === 'undefined') return null
   
@@ -171,12 +223,16 @@ export const getStoredUser = (): Student | null => {
 }
 
 export const storeUser = (student: Student) => {
-  localStorage.setItem('current-student', JSON.stringify({
-    student,
-    timestamp: Date.now()
-  }))
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('current-student', JSON.stringify({
+      student,
+      timestamp: Date.now()
+    }))
+  }
 }
 
 export const clearStoredUser = () => {
-  localStorage.removeItem('current-student')
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem('current-student')
+  }
 }
