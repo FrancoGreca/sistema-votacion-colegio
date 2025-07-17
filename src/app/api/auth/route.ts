@@ -1,78 +1,32 @@
-// src/app/api/auth/route.ts
-import { NextRequest, NextResponse } from 'next/server'
-
-const AIRTABLE_API_KEY = process.env.NEXT_PUBLIC_AIRTABLE_API_KEY
-const AIRTABLE_BASE_ID = process.env.NEXT_PUBLIC_AIRTABLE_BASE_ID
-
-async function airtableRequest(table: string, filterFormula?: string) {
-  const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${table}${filterFormula ? `?filterByFormula=${encodeURIComponent(filterFormula)}` : ''}`
-  
-  const response = await fetch(url, {
-    headers: {
-      'Authorization': `Bearer ${AIRTABLE_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-  })
-  
-  if (!response.ok) {
-    throw new Error(`Airtable error: ${response.status}`)
-  }
-  
-  return response.json()
-}
+// src/app/api/auth/route.ts - MIGRADO USANDO NUEVA ARQUITECTURA
+import { NextRequest } from 'next/server';
+import { AuthController } from '../../../application/controllers/Controllers';
+import { rateLimitMiddleware } from '../../../application/middleware/middleware';
 
 export async function POST(request: NextRequest) {
-  try {
-    const { username, password } = await request.json()
-
-    // Si no está configurado Airtable, devolver usuario demo
-    if (!AIRTABLE_API_KEY || !AIRTABLE_BASE_ID || 
-        AIRTABLE_API_KEY === 'DEMO_MODE' || AIRTABLE_BASE_ID === 'DEMO_MODE') {
-      return NextResponse.json({
-        success: true,
-        student: {
-          id: 'demo',
-          username: username,
-          nombre: 'Demo',
-          apellido: 'User',
-          grado: '1ro',
-          curso: 'Arrayan',
-          active: true
-        }
-      })
-    }
-
-    // Buscar estudiante en Airtable
-    const filterFormula = `AND({Username} = "${username}", {Password} = "${password}", {Active} = TRUE())`
-    const data = await airtableRequest('Students', filterFormula)
-    
-    if (data.records.length === 0) {
-      return NextResponse.json({
-        success: false,
-        error: 'Usuario o contraseña incorrectos'
-      })
-    }
-
-    const record = data.records[0]
-    const student = {
-      id: record.id,
-      username: record.fields.Username || '',
-      nombre: record.fields.Nombre || '',
-      apellido: record.fields.Apellido || '',
-      grado: record.fields.Grado || '',
-      curso: record.fields.Curso || '',
-      active: record.fields.Active || false
-    }
-
-    return NextResponse.json({
-      success: true,
-      student
-    })
-  } catch (error) {
-    console.error('Auth error:', error)
-    return NextResponse.json({
-      success: false,
-      error: 'Error de servidor'
-    }, { status: 500 })
+  // Rate limiting más estricto para autenticación
+  const rateLimitResponse = rateLimitMiddleware(5, 60000)(request);
+  if (rateLimitResponse) {
+    return rateLimitResponse;
   }
+
+  return await AuthController.authenticate(request);
 }
+
+/* 
+COMPARACIÓN: ANTES vs DESPUÉS
+
+ANTES (código original):
+- Llamadas directas a Airtable
+- Lógica de autenticación en la ruta
+- Sin rate limiting (vulnerable a ataques de fuerza bruta)
+- Manejo manual de modo demo
+- Validación básica
+
+DESPUÉS (nueva arquitectura):
+- Repository pattern con abstracción de DB
+- Lógica de autenticación en controlador
+- Rate limiting para prevenir ataques
+- Manejo automático de diferentes tipos de DB
+- Validación tipada y manejo robusto de errores
+*/
