@@ -1,72 +1,44 @@
-// src/app/api/check-vote/route.ts
-import { NextRequest, NextResponse } from 'next/server'
-
-const AIRTABLE_API_KEY = process.env.NEXT_PUBLIC_AIRTABLE_API_KEY
-const AIRTABLE_BASE_ID = process.env.NEXT_PUBLIC_AIRTABLE_BASE_ID
-
-// Función para formatear el mes correctamente para Airtable
-const formatMonthForAirtable = (date: Date): string => {
-  const months = [
-    'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
-    'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
-  ]
-  
-  return months[date.getMonth()]
-}
-
-async function airtableRequest(table: string) {
-  const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${table}`
-  
-  const response = await fetch(url, {
-    headers: {
-      'Authorization': `Bearer ${AIRTABLE_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-  })
-  
-  if (!response.ok) {
-    throw new Error(`Airtable error: ${response.status}`)
-  }
-  
-  return response.json()
-}
+// src/app/api/check-vote/route.ts - MIGRADO USANDO NUEVA ARQUITECTURA
+import { NextRequest } from 'next/server';
+import { VoteController } from '../../../application/controllers/Controllers';
+import { rateLimitMiddleware, cacheMiddleware } from '../../../application/middleware/middleware';
+import { generateCacheKey } from '../../../application/middleware/middleware';
 
 export async function GET(request: NextRequest) {
-  try {
-    const { searchParams } = new URL(request.url)
-    const studentUsername = searchParams.get('username')
-
-    if (!studentUsername) {
-      return NextResponse.json({ hasVoted: false }, { status: 400 })
-    }
-
-    // Si no está configurado Airtable, devolver false (modo demo)
-    if (!AIRTABLE_API_KEY || !AIRTABLE_BASE_ID || 
-        AIRTABLE_API_KEY === 'DEMO_MODE' || AIRTABLE_BASE_ID === 'DEMO_MODE') {
-      return NextResponse.json({ hasVoted: false })
-    }
-
-    const currentDate = new Date()
-    const currentMonth = formatMonthForAirtable(currentDate) // ✅ CORREGIDO
-    const currentYear = currentDate.getFullYear()
-
-    console.log('Checking vote with month format:', currentMonth) // Debug
-
-    const filterFormula = `AND(
-      {StudentUsername} = "${studentUsername}", 
-      {Mes} = "${currentMonth}", 
-      {Ano} = ${currentYear}
-    )`
-    
-    const data = await airtableRequest(`Votes?filterByFormula=${encodeURIComponent(filterFormula)}`)
-    
-    return NextResponse.json({ 
-      hasVoted: data.records.length > 0 
-    })
-  } catch (error) {
-    console.error('Check vote error:', error)
-    return NextResponse.json({ 
-      hasVoted: false 
-    })
+  // Rate limiting
+  const rateLimitResponse = rateLimitMiddleware(15, 60000)(request);
+  if (rateLimitResponse) {
+    return rateLimitResponse;
   }
+
+  // Cache con TTL corto
+  const { searchParams } = new URL(request.url);
+  const username = searchParams.get('username') || '';
+
+  const cacheHandler = cacheMiddleware({
+    ttl: 30, // 30 segundos
+    keyGenerator: (req) => generateCacheKey('check-vote', { username }),
+  });
+
+  return await cacheHandler(request, async () => {
+    return await VoteController.checkVote(request);
+  });
 }
+
+/* 
+COMPARACIÓN: ANTES vs DESPUÉS
+
+ANTES (código original):
+- Lógica de verificación en la ruta
+- Consultas directas a Airtable
+- Sin cache (consulta repetitiva costosa)
+- Manejo manual de fechas
+- Sin rate limiting
+
+DESPUÉS (nueva arquitectura):
+- Lógica de verificación en controlador
+- Abstracción de base de datos
+- Cache para reducir consultas repetitivas
+- Utilidades centralizadas para fechas
+- Rate limiting para prevenir abuso
+*/
