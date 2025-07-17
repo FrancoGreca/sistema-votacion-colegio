@@ -79,7 +79,6 @@ export function rateLimitMiddleware(
 }
 
 // src/application/middleware/caching.ts
-import { NextRequest, NextResponse } from 'next/server';
 import { getCacheService } from '../../infrastructure/database/config/RepositoryContainer';
 
 interface CacheOptions {
@@ -144,7 +143,6 @@ export function cacheMiddleware(options: CacheOptions) {
 }
 
 // src/application/middleware/errorHandling.ts
-import { NextResponse } from 'next/server';
 import { 
   DomainError, 
   ValidationError, 
@@ -222,8 +220,6 @@ export function errorHandler(error: unknown): NextResponse {
 }
 
 // src/application/middleware/utils.ts
-import { NextRequest } from 'next/server';
-
 export function getClientId(req: NextRequest): string {
   return req.ip || 
          req.headers.get('x-forwarded-for')?.split(',')[0] || 

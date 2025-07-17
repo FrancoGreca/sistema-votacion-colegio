@@ -50,9 +50,6 @@ export class CandidateController {
 }
 
 // src/application/controllers/AuthController.ts
-import { NextRequest, NextResponse } from 'next/server';
-import { getStudentRepository } from '../../infrastructure/database/config/RepositoryContainer';
-import { errorHandler } from '../middleware/middleware';
 import { LoginRequest, LoginResponse } from '../../core/types/ApiTypes';
 import { AuthenticationError } from '../../core/errors/DomainErrors';
 
@@ -98,14 +95,11 @@ export class AuthController {
 }
 
 // src/application/controllers/VoteController.ts
-import { NextRequest, NextResponse } from 'next/server';
 import { 
   getVoteRepository, 
   getStudentRepository, 
-  getCandidateRepository,
   getCacheService 
 } from '../../infrastructure/database/config/RepositoryContainer';
-import { errorHandler } from '../middleware/middleware';
 import { Vote } from '../../core/entities/Vote';
 import { VoteRequest, VoteResponse, VotesResponse, CheckVoteResponse } from '../../core/types/ApiTypes';
 import { VotingError, NotFoundError } from '../../core/errors/DomainErrors';
@@ -257,9 +251,7 @@ export class VoteController {
 }
 
 // src/application/controllers/DiagnosticController.ts
-import { NextRequest, NextResponse } from 'next/server';
 import { SystemDiagnostics } from '../../utils/diagnostics';
-import { errorHandler } from '../middleware/middleware';
 
 export class DiagnosticController {
   static async runDiagnostics(req: NextRequest): Promise<NextResponse> {
